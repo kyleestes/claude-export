@@ -4,6 +4,65 @@
     return now.toISOString().replace("T", " ").replace(/\..+/, "");
   }
 
+  function getChatUrl() {
+    return window.location.href;
+  }
+
+  function getChatDate() {
+    // Try to extract chat creation date from the page
+    // Look for various possible date indicators
+    
+    // Method 1: Check for any time elements or date strings in the DOM
+    const timeElements = document.querySelectorAll('time[datetime]');
+    for (const timeEl of timeElements) {
+      const datetime = timeEl.getAttribute('datetime');
+      if (datetime) {
+        try {
+          const date = new Date(datetime);
+          if (!isNaN(date.getTime())) {
+            return date.toISOString().replace("T", " ").replace(/\..+/, "");
+          }
+        } catch (e) {}
+      }
+    }
+    
+    // Method 2: Look for date patterns in the HTML content
+    const datePatterns = [
+      /\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}/g,
+      /\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}/g
+    ];
+    
+    const bodyText = document.body.textContent || document.body.innerText || '';
+    for (const pattern of datePatterns) {
+      const matches = bodyText.match(pattern);
+      if (matches && matches.length > 0) {
+        try {
+          const date = new Date(matches[0]);
+          if (!isNaN(date.getTime())) {
+            return date.toISOString().replace("T", " ").replace(/\..+/, "");
+          }
+        } catch (e) {}
+      }
+    }
+    
+    // Method 3: Check for data attributes that might contain timestamps
+    const elementsWithData = document.querySelectorAll('[data-timestamp], [data-created], [data-time]');
+    for (const el of elementsWithData) {
+      const timestamp = el.dataset.timestamp || el.dataset.created || el.dataset.time;
+      if (timestamp) {
+        try {
+          const date = new Date(parseInt(timestamp) > 1000000000000 ? parseInt(timestamp) : parseInt(timestamp) * 1000);
+          if (!isNaN(date.getTime())) {
+            return date.toISOString().replace("T", " ").replace(/\..+/, "");
+          }
+        } catch (e) {}
+      }
+    }
+    
+    // If no chat date found, return null
+    return null;
+  }
+
   function getContents() {
     let title = document.title.replace(/ - Claude.*$/, "");
     const all = [];
@@ -253,8 +312,19 @@
 
   const { elements, title } = getContents();
   const timestamp = getTimestamp();
+  const chatUrl = getChatUrl();
+  const chatDate = getChatDate();
 
-  markdown += `# ${title || "Claude Chat"}\n\`${timestamp}\`\n\n`;
+  // Add title as a markdown link to the chat URL
+  markdown += `[Exported from Claude.ai on ${timestamp}](${chatUrl})\n\n`;
+
+  // Chat date is not reliable, so omit it for now
+  // // Add chat date if found, otherwise use current timestamp
+  // if (chatDate) {
+  //   markdown += `**Chat Date:** ${chatDate}\n\n`;
+  // } 
+
+  markdown += `\n\n`;
 
   for (let i = 0; i < elements.length; i++) {
     const {type, node} = elements[i];
