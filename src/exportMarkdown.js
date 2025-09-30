@@ -66,14 +66,37 @@
   function getContents() {
     let title = document.title.replace(/ - Claude.*$/, "");
     const all = [];
-    const allNodes = Array.from(document.querySelectorAll('.font-user-message, .font-claude-response'));
-    for (const node of allNodes) {
-      if (node.classList.contains('font-user-message')) {
-        all.push({type: 'user', node});
-      } else if (node.classList.contains('font-claude-response')) {
-        all.push({type: 'claude', node});
+    
+    // Find user messages by data-testid (newer structure)
+    const userMessages = Array.from(document.querySelectorAll('[data-testid="user-message"]'));
+    for (const node of userMessages) {
+      all.push({type: 'user', node});
+    }
+    
+    // Find claude messages by class (should still work)
+    const claudeMessages = Array.from(document.querySelectorAll('.font-claude-response'));
+    for (const node of claudeMessages) {
+      all.push({type: 'claude', node});
+    }
+    
+    // Fallback: try the old selectors for backwards compatibility
+    if (all.length === 0) {
+      const oldNodes = Array.from(document.querySelectorAll('.font-user-message, .font-claude-response'));
+      for (const node of oldNodes) {
+        if (node.classList.contains('font-user-message')) {
+          all.push({type: 'user', node});
+        } else if (node.classList.contains('font-claude-response')) {
+          all.push({type: 'claude', node});
+        }
       }
     }
+    
+    // Sort by document order to ensure proper conversation flow
+    all.sort((a, b) => {
+      const aPos = a.node.compareDocumentPosition(b.node);
+      return aPos & Node.DOCUMENT_POSITION_FOLLOWING ? -1 : 1;
+    });
+    
     return { elements: all, title };
   }
 
@@ -397,8 +420,8 @@
         }
       }
       
-      // The node itself should be the font-user-message div, which is also the data-testid="user-message" element
-      const userMessageNode = node.classList.contains('font-user-message') ? node : node.querySelector('.font-user-message');
+      // The node itself should be the data-testid="user-message" element
+      const userMessageNode = node.getAttribute('data-testid') === 'user-message' ? node : node.querySelector('[data-testid="user-message"]');
       if (!userMessageNode) continue;
       
       let contentParts = [];
@@ -481,25 +504,51 @@
       
       markdown += attachmentContent + userContent;
     } else if (type === 'claude') {
-      // Check for artifacts first
-      const artifacts = Array.from(node.querySelectorAll('.artifact-block-cell'));
-      let artifactContent = "";
-      if (artifacts.length > 0) {
-        artifactContent += "**Artifacts**:\n";
-        for (const artifact of artifacts) {
-          const titleElement = artifact.querySelector('.leading-tight.text-sm');
-          if (titleElement) {
-            const title = titleElement.textContent.trim();
-            artifactContent += `- ${title}\n`;
+      // Process Claude response in document order (including artifacts where they appear)
+      let claudeContent = "";
+      
+      // Find the main response container - try multiple selectors
+      mainNode = node.querySelector('.font-claude-response') || node;
+      
+      if (mainNode) {
+        // Process all children in order to preserve document structure
+        for (const child of mainNode.children) {
+          // Handle artifacts inline where they appear
+          if (child.classList.contains('artifact-block-cell') || child.querySelector('.artifact-block-cell')) {
+            const artifacts = child.classList.contains('artifact-block-cell') 
+              ? [child] 
+              : Array.from(child.querySelectorAll('.artifact-block-cell'));
+            
+            claudeContent += "\n**Artifacts**:\n";
+            for (const artifact of artifacts) {
+              const titleElement = artifact.querySelector('.leading-tight.text-sm');
+              if (titleElement) {
+                const title = titleElement.textContent.trim();
+                claudeContent += `- ${title}\n`;
+              }
+            }
+            claudeContent += "\n";
+          }
+          // Handle standard markdown content
+          else if (child.classList.contains('standard-markdown')) {
+            claudeContent += nodeToMarkdown(child, false);
+          }
+          // Handle any other content that might contain text
+          else if (child.textContent && child.textContent.trim()) {
+            claudeContent += nodeToMarkdown(child, false);
           }
         }
-        artifactContent += "\n";
       }
       
-      // Then process the regular markdown content
-      mainNode = node.querySelector('.standard-markdown');
-      if (!mainNode) continue;
-      markdown += artifactContent + nodeToMarkdown(mainNode, false) + "\n";
+      // Fallback: if we didn't capture anything, try the old method
+      if (!claudeContent.trim()) {
+        const standardMarkdown = node.querySelector('.standard-markdown');
+        if (standardMarkdown) {
+          claudeContent = nodeToMarkdown(standardMarkdown, false);
+        }
+      }
+      
+      markdown += claudeContent + "\n";
     }
   }
 

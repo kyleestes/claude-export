@@ -24,6 +24,7 @@
     "webpack-cli": "^5.0.1"
   },
   "dependencies": {
-    "html2canvas": "^1.4.1"
+    "html2canvas": "^1.4.1",
+    "jsdom": "^22.1.0"
   }
 }
